@@ -1,30 +1,30 @@
 package main
 
 import (
-	"encoding/json"
-	"log"
-	"path"
-	"os"
-	"time"
-	"mime"
-	"mime/multipart"
-	"io/ioutil"
 	"crypto/md5"
 	"encoding/hex"
-	"strings"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/url"
-	"flag"
+	"os"
+	"path"
+	"strings"
+	"time"
 )
 
 type User struct {
-	Login	string	`json:"login"`
-	Password	string `json:"password"`
+	Login    string `json:"login"`
+	Password string `json:"password"` // MD5 hash of <user>:<realm>:<pass>
 }
 
 type Config struct {
-	Users	[]User  `json:"users"`
+	Users []User `json:"users"`
 }
 
 func LoadConfig(path string) *Config {
@@ -38,7 +38,7 @@ func LoadConfig(path string) *Config {
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	cfg := &Config{}
 	err = json.Unmarshal(buf, cfg)
 	if err != nil {
@@ -56,15 +56,10 @@ func main() {
 	cfg := LoadConfig(*cfgfile)
 
 	http.Handle("/edit/", &EditServer{
-		root: *root,
+		root:  *root,
 		realm: "Jason's Server",
-		edit: http.StripPrefix("/edit/", http.FileServer(http.Dir(*edit))),
-		// per hash of <user>:<realm>:<pass>
+		edit:  http.StripPrefix("/edit/", http.FileServer(http.Dir(*edit))),
 		users: cfg.Users,
-/*[]string{
-			"fa76f7bc5c68853b00722948b25b7710",
-			"40442b7994c6cda2b56d73d48d09fd47",
-		},*/
 	})
 
 	http.Handle("/", http.FileServer(http.Dir(*root)))
@@ -72,9 +67,9 @@ func main() {
 }
 
 type EditServer struct {
-	root	string
+	root  string
 	users []User
-	edit http.Handler
+	edit  http.Handler
 	realm string
 }
 
@@ -99,18 +94,18 @@ func md5combine(parts ...string) string {
 func (s *EditServer) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
 	// First, we check to make sure the user is authenticated
 	auth := DigestAuthParams(req)
-	if auth == nil || 
+	if auth == nil ||
 		auth["opaque"] != "foo" ||
 		auth["algorithm"] != "MD5" ||
 		auth["qop"] != "auth" {
-		// they did not supply authorization, 
+		// they did not supply authorization,
 		// or it's not the kind we like
 		s.NeedAuthorization(rsp, req)
 		return
 	}
 	// Make sure the URI matches
 	u, err := url.Parse(auth["uri"])
-	if err != nil || 
+	if err != nil ||
 		req.URL == nil ||
 		len(u.Path) > len(req.URL.Path) ||
 		!strings.HasPrefix(req.URL.Path, u.Path) {
@@ -158,7 +153,7 @@ func (s *EditServer) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
 // NeedAuthorization tells the browser we need authorization
 func (s *EditServer) NeedAuthorization(rsp http.ResponseWriter, req *http.Request) {
 	nonce := computeNonce()
-	authRequest := fmt.Sprintf(`Digest realm="%s", nonce="%s", qop="auth", opaque="foo", algorithm="MD5"`, 
+	authRequest := fmt.Sprintf(`Digest realm="%s", nonce="%s", qop="auth", opaque="foo", algorithm="MD5"`,
 		s.realm,
 		nonce,
 	)
@@ -167,7 +162,6 @@ func (s *EditServer) NeedAuthorization(rsp http.ResponseWriter, req *http.Reques
 	rsp.WriteHeader(http.StatusUnauthorized)
 	rsp.Write([]byte("401 Unauthorized\n"))
 }
-
 
 // DigestAuthParams parses the auth parameters into a map
 func DigestAuthParams(r *http.Request) map[string]string {
@@ -249,7 +243,7 @@ func (s *EditServer) HandlePageUpdate(rsp http.ResponseWriter, req *http.Request
 		fmt.Printf("%d bytes of comment, %d bytes of %q\n",
 			len(comment),
 			len(content),
-			filename);
+			filename)
 		f, err := os.Create(path.Join(s.root, filename))
 		if err != nil {
 			rsp.WriteHeader(http.StatusInternalServerError)
@@ -257,14 +251,13 @@ func (s *EditServer) HandlePageUpdate(rsp http.ResponseWriter, req *http.Request
 			return
 		}
 		f.Write(content)
-		f.Close() 
-		http.Redirect(rsp, req, "/" + filename, http.StatusMovedPermanently)
+		f.Close()
+		http.Redirect(rsp, req, "/"+filename, http.StatusMovedPermanently)
 	} else {
 		rsp.WriteHeader(http.StatusBadRequest)
 		rsp.Write([]byte("Error trying to process upload\n"))
 	}
 }
-
 
 // HandlePageUpdate handles a POST to update a page
 func (s *EditServer) HandleHTMLPageEdit(rsp http.ResponseWriter, req *http.Request) {
@@ -333,7 +326,7 @@ func (s *EditServer) HandleHTMLPageEdit(rsp http.ResponseWriter, req *http.Reque
 		fmt.Printf("%d bytes of comment, %d bytes of %q\n",
 			len(comment),
 			len(content),
-			fname);
+			fname)
 		f, err := os.Create(path.Join(s.root, fname))
 		if err != nil {
 			rsp.WriteHeader(http.StatusInternalServerError)
@@ -341,7 +334,7 @@ func (s *EditServer) HandleHTMLPageEdit(rsp http.ResponseWriter, req *http.Reque
 			return
 		}
 		f.Write(content)
-		f.Close() 
+		f.Close()
 		answer := &Answer{
 			Status: "ok",
 		}
@@ -355,5 +348,5 @@ func (s *EditServer) HandleHTMLPageEdit(rsp http.ResponseWriter, req *http.Reque
 }
 
 type Answer struct {
-	Status  string `json:"status"`
+	Status string `json:"status"`
 }
