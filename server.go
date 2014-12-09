@@ -341,7 +341,7 @@ func (s *EditServer) HandleHTMLPageEdit(rsp http.ResponseWriter, req *http.Reque
 		if err != nil {
 			answer.Status = "failed"
 		}
-		rspbuf, err := json.Marshal(answer)
+		rspbuf, _ := json.Marshal(answer)
 		rsp.Write(rspbuf)
 		rsp.Write([]byte("\n"))
 	} else {
@@ -354,28 +354,26 @@ type Answer struct {
 	Status string `json:"status"`
 }
 
-func (s *EditServer) PublishFile(path string, comment string, body []byte) error {
-	f, err := os.Create(path.Join(s.root, path))
+func (s *EditServer) PublishFile(fpath string, comment string, body []byte) error {
+	f, err := os.Create(path.Join(s.root, fpath))
 	if err != nil {
 		log.Printf("Error writing file: %s", err)
-		rsp.WriteHeader(http.StatusInternalServerError)
-		rsp.Write([]byte("Error saving file\n"))
-		return
+		return err
 	}
 	f.Write(body)
 	f.Close()
 
-	cmd := exec.Command("git", "add", path)
+	cmd := exec.Command("git", "add", fpath)
 	cmd.Dir = s.root
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		log.Printf("Problem running git add: %s", err)
 		return err
 	}
 
-	cmd = exec.Command("git", "commit", "-m", comment, path)
+	cmd = exec.Command("git", "commit", "-m", comment, fpath)
 	cmd.Dir = s.root
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
