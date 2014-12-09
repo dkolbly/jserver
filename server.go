@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
 	"time"
@@ -51,9 +52,14 @@ func main() {
 	cfgfile := flag.String("c", "config.json", "config file")
 	root := flag.String("root", "/www", "root of tree")
 	edit := flag.String("edit", "/edit", "root of edit tree")
+	ace := flag.String("ace", "/ace", "root of ace tree")
 	listen := flag.String("listen", ":80", "what to listen on")
 	flag.Parse()
 	cfg := LoadConfig(*cfgfile)
+
+	http.Handle("/edit/ace/",
+		http.StripPrefix("/edit/ace/", http.FileServer(http.Dir(*ace))),
+	)
 
 	http.Handle("/edit/", &EditServer{
 		root:  *root,
@@ -327,16 +333,13 @@ func (s *EditServer) HandleHTMLPageEdit(rsp http.ResponseWriter, req *http.Reque
 			len(comment),
 			len(content),
 			fname)
-		f, err := os.Create(path.Join(s.root, fname))
-		if err != nil {
-			rsp.WriteHeader(http.StatusInternalServerError)
-			rsp.Write([]byte("Error saving file\n"))
-			return
-		}
-		f.Write(content)
-		f.Close()
 		answer := &Answer{
 			Status: "ok",
+		}
+
+		err = s.PublishFile(fname, string(comment), content)
+		if err != nil {
+			answer.Status = "failed"
 		}
 		rspbuf, err := json.Marshal(answer)
 		rsp.Write(rspbuf)
@@ -349,4 +352,37 @@ func (s *EditServer) HandleHTMLPageEdit(rsp http.ResponseWriter, req *http.Reque
 
 type Answer struct {
 	Status string `json:"status"`
+}
+
+func (s *EditServer) PublishFile(path string, comment string, body []byte) error {
+	f, err := os.Create(path.Join(s.root, path))
+	if err != nil {
+		log.Printf("Error writing file: %s", err)
+		rsp.WriteHeader(http.StatusInternalServerError)
+		rsp.Write([]byte("Error saving file\n"))
+		return
+	}
+	f.Write(body)
+	f.Close()
+
+	cmd := exec.Command("git", "add", path)
+	cmd.Dir = s.root
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("Problem running git add: %s", err)
+		return err
+	}
+
+	cmd = exec.Command("git", "commit", "-m", comment, path)
+	cmd.Dir = s.root
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		log.Printf("Problem running git commit: %s", err)
+		return err
+	}
+	return nil
 }
