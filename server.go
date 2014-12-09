@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/libgit2/git2go"
 	"io/ioutil"
 	"log"
 	"mime"
@@ -150,9 +151,26 @@ func (s *EditServer) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
 		s.HandlePageUpdate(rsp, req)
 	} else if req.URL.Path == "/edit/html" && req.Method == "POST" {
 		s.HandleHTMLPageEdit(rsp, req)
+	} else if strings.HasPrefix(req.URL.Path, "/edit/git/") {
+		s.HandleGit(rsp,req)
 	} else {
 		// otherwise, serve the response from the edit tree
 		s.edit.ServeHTTP(rsp, req)
+	}
+}
+
+// HandleGit handles all /edit/git commands
+func (s *EditServer) HandleGit(rsp http.ResponseWriter, req *http.Request) {
+	if strings.HasPrefix(req.URL.Path, "/edit/git/status/") {
+		filename := req.URL.Path[17:]
+		repo, _ := git.OpenRepository(s.root)
+		status, _ := repo.StatusFile(filename)
+		type Response struct {
+			Status git.Status
+		}
+		r := Response{status}
+		buf, _ := json.Marshal(r)
+		rsp.Write([]byte(buf))
 	}
 }
 
