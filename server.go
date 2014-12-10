@@ -188,16 +188,11 @@ func (s *EditServer) HandleGit(rsp http.ResponseWriter, req *http.Request) {
 		r := Response{status}
 		buf, _ := json.Marshal(r)*/
 		rsp.Write([]byte(gitStatusToString(status)))
-	} else if strings.HasPrefix(req.URL.Path, "/edit/git/add/") {
+	} else if strings.HasPrefix(req.URL.Path, "/edit/git/commitfile/") && req.Method == "POST" {
 		filename := req.URL.Path[14:]
 
 		idx, _ := repo.Index()
 		idx.AddByPath(filename)
-		idx.WriteTree()
-	} else if strings.HasPrefix(req.URL.Path, "/edit/git/commit") {
-		//filename := req.URL.Path[17:]
-
-		idx, _ := repo.Index()
 		treeId, _ := idx.WriteTree()
 
 		sig := &git.Signature{
@@ -216,17 +211,7 @@ func (s *EditServer) HandleGit(rsp http.ResponseWriter, req *http.Request) {
 			ct, _ := repo.LookupCommit(cb.Target())
 			repo.CreateCommit("HEAD", sig, sig, message, tree, ct)
 		}
-		/*opts := git.CheckoutOpts{
-			git.CheckotUpdateOnly,
-			true,
-			os.ModePerm,
-			os.ModePerm,
-			os.O_CREATE | os.O_TRUNC | os.O_WRONLY,
-		}*/
-		/*repo.CheckoutTree(tree, &opts)*/
-		//repo.CheckoutHead(&opts)
 		repo.CheckoutIndex(idx, nil)
-		//fmt.Println(cid)
 
 		rsp.Write([]byte("OK"))
 	}
