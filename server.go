@@ -159,19 +159,78 @@ func (s *EditServer) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func gitStatusToString(status git.Status) string {
+	switch status {
+	case git.StatusCurrent:	return "Current"
+	case git.StatusIndexNew:	return "IndexNew"
+	case git.StatusIndexModified:	return "IndexModified"
+	case git.StatusIndexRenamed:	return "IndexRenamed"
+	case git.StatusIndexTypeChange:	return "IndexTypeChange"
+	case git.StatusWtNew:	return "WtNew"
+	case git.StatusWtModified:	return "WtModified"
+	case git.StatusWtDeleted:	return "WtDeleted"
+	case git.StatusWtTypeChange:	return "WtTypeChange"
+	case git.StatusWtRenamed:	return "WtRenamed"
+	case git.StatusIgnored:	return "Ignored"
+	}
+	return "Unknown"
+}
+
 // HandleGit handles all /edit/git commands
 func (s *EditServer) HandleGit(rsp http.ResponseWriter, req *http.Request) {
+	repo, _ := git.OpenRepository(s.root)
 	if strings.HasPrefix(req.URL.Path, "/edit/git/status/") {
 		filename := req.URL.Path[17:]
-		repo, _ := git.OpenRepository(s.root)
 		status, _ := repo.StatusFile(filename)
-		type Response struct {
+		/*type Response struct {
 			Status git.Status
 		}
 		r := Response{status}
-		buf, _ := json.Marshal(r)
-		rsp.Write([]byte(buf))
+		buf, _ := json.Marshal(r)*/
+		rsp.Write([]byte(gitStatusToString(status)))
+	} else if strings.HasPrefix(req.URL.Path, "/edit/git/add/") {
+		filename := req.URL.Path[14:]
+
+		idx, _ := repo.Index()
+		idx.AddByPath(filename)
+		idx.WriteTree()
+	} else if strings.HasPrefix(req.URL.Path, "/edit/git/commit") {
+		//filename := req.URL.Path[17:]
+
+		idx, _ := repo.Index()
+		treeId, _ := idx.WriteTree()
+
+		sig := &git.Signature{
+			Name:  "Rand Om Hacker",
+			Email: "random@hacker.com",
+			When:  time.Now(),
+		}
+
+		cb, _ := repo.Head()
+
+		tree, _ := repo.LookupTree(treeId)
+		message := "Auto commit"
+		if cb == nil {
+			repo.CreateCommit("HEAD", sig, sig, message, tree)
+		} else {
+			ct, _ := repo.LookupCommit(cb.Target())
+			repo.CreateCommit("HEAD", sig, sig, message, tree, ct)
+		}
+		/*opts := git.CheckoutOpts{
+			git.CheckotUpdateOnly,
+			true,
+			os.ModePerm,
+			os.ModePerm,
+			os.O_CREATE | os.O_TRUNC | os.O_WRONLY,
+		}*/
+		/*repo.CheckoutTree(tree, &opts)*/
+		//repo.CheckoutHead(&opts)
+		repo.CheckoutIndex(idx, nil)
+		//fmt.Println(cid)
+
+		rsp.Write([]byte("OK"))
 	}
+	rsp.Write([]byte("\n"))
 }
 
 // NeedAuthorization tells the browser we need authorization
