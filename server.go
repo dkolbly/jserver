@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +18,8 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -153,6 +157,10 @@ func (s *EditServer) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
 		s.HandleHTMLPageEdit(rsp, req)
 	} else if strings.HasPrefix(req.URL.Path, "/edit/git/") {
 		s.HandleGit(rsp,req)
+	} else if strings.HasPrefix(req.URL.Path, "/edit/v/") {
+		s.HandleVersions(rsp, req)
+	} else if req.URL.Path == "/edit/list" {
+		s.HandleListing(rsp, req)
 	} else {
 		// otherwise, serve the response from the edit tree
 		s.edit.ServeHTTP(rsp, req)
@@ -325,6 +333,116 @@ func (s *EditServer) HandlePageUpdate(rsp http.ResponseWriter, req *http.Request
 		rsp.WriteHeader(http.StatusBadRequest)
 		rsp.Write([]byte("Error trying to process upload\n"))
 	}
+}
+
+type FileEntry struct {
+	Name     string    `json:"name"`
+	Modified time.Time `json:"modified"`
+	Size     int64     `json:"size"`
+}
+
+type FileList struct {
+	Listing []FileEntry `json:"listing"`
+}
+
+type FileVersion struct {
+	Hash     string    `json:"hash"`
+	Modified time.Time `json:"modified"`
+	Comment  string    `json:"comment"`
+}
+
+type VersionList struct {
+	Listing []FileVersion `json:"listing"`
+	Content string        `json:"content"`
+}
+
+// HandleVersions returns version history for a file
+func (s *EditServer) HandleVersions(rsp http.ResponseWriter, req *http.Request) {
+	what := strings.TrimPrefix(req.URL.Path, "/edit/v/")
+	src, err := os.Open(path.Join(s.root, what))
+	if err != nil {
+		log.Printf("Failed to read file: %s", err)
+		rsp.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	srcdata, err := ioutil.ReadAll(src)
+	if err != nil {
+		log.Printf("Failed to read file: %s", err)
+		rsp.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	cmd := exec.Command("git", "log", "--format=tformat:%h <%ai> %s", what)
+	cmd.Dir = s.root
+	buf, err := cmd.Output()
+	if err != nil {
+		log.Printf("Failed to read git log: %s", err)
+		rsp.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	vlist := &VersionList{
+		Content: string(srcdata),
+		Listing: []FileVersion{},
+	}
+	re := regexp.MustCompile("([0-9a-f]+) <([0-9 :-]+)> (.*)\n$")
+
+	rdr := bufio.NewReader(bytes.NewReader(buf))
+	for {
+		line, err := rdr.ReadString('\n')
+		if err != nil {
+			break
+		}
+		log.Printf("==> %q", line)
+		submatch := re.FindStringSubmatch(line)
+		if submatch != nil {
+			log.Printf("  hash %q", submatch[1])
+			log.Printf("  date %q", submatch[2])
+			log.Printf("  comment %q", submatch[3])
+			t, err := time.Parse("2006-01-02 15:04:05 -0700", submatch[2])
+			if err == nil {
+				vlist.Listing = append(vlist.Listing,
+					FileVersion{
+						Hash:     submatch[1],
+						Modified: t,
+						Comment:  submatch[3],
+					})
+			}
+		}
+	}
+	rspbuf, _ := json.Marshal(vlist)
+	rsp.Write(rspbuf)
+}
+
+// HandleListing returns a list of all files
+func (s *EditServer) HandleListing(rsp http.ResponseWriter, req *http.Request) {
+	flist := &FileList{
+		Listing: []FileEntry{},
+	}
+
+	filepath.Walk(
+		s.root,
+		func(path string, info os.FileInfo, err error) error {
+			if strings.HasSuffix(path, ".git") {
+				return filepath.SkipDir
+			}
+			if !info.IsDir() {
+				name := path[len(s.root):]
+				flist.Listing = append(
+					flist.Listing,
+					FileEntry{
+						Name:     path[len(s.root)+1:],
+						Modified: info.ModTime(),
+						Size:     info.Size(),
+					},
+				)
+				log.Printf("walk %q", name)
+			}
+			return nil
+		},
+	)
+	rspbuf, _ := json.Marshal(flist)
+	rsp.Write(rspbuf)
 }
 
 // HandlePageUpdate handles a POST to update a page

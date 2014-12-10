@@ -1,7 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<title>JServer Page Editor</title>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>JServer Page Editor</title>
+
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/css/bootstrap-theme.min.css">
+
 <style type="text/css" media="screen">
 
   h1 {
@@ -21,6 +29,7 @@
     #page {
         position: absolute;
         top: 150px;
+        opacity: 0.2;
         right: 10px;
         height: 500px;
         width: 45%;
@@ -29,40 +38,91 @@
         border-right: 1px solid black;
         border-bottom: 1px solid black;
     }
+
+  .filelist tr:hover td {
+       background: #88f
+ }
 </style>
 </head>
 <body>
 
 <h1>JServer Page Editor</h1>
 
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
+
 <table>
   <tr>
-    <td>Load old:</td> 
-    <td colspan="2"><select id="loader" name="loader">
-<option value="foo.html">foo.html</option>
-<option value="test.html">test.html</option>
-</select></td>
+    <td>Page:</td> 
+    <td colspan="2">
+      <button type="button" class="btn-xs btn-warning" data-toggle="modal" data-target="#newModal">New...</button>
+      <button type="button" class="btn-xs btn-warning" onclick="loadother()">Load...</button>
+    </td>
   </tr>
   <tr>
     <td>Filename:</td> 
-    <td><input type="text" id="formfilename" name="filename" value="test.html" disabled="1" onclick="loadold()"></input></td>
-    <td><input type="button" onclick="rename()" value="Rename"></input></td>
-    <td><span id="renameinfo"></span> Link: <span id="pagelink"></span></td>
+    <td colspan="2"><a id="pagelink"></a></td>
   </tr>
 
   <tr>
     <td>Comment:</td> 
-    <td><input type="text" id="formcomment" name="comment" value="A new version!" disabled="1"></input></td>
-    <td><input id="pubbutton" type="button" onclick="publish()" value="Publish" disabled="1"></input></td>
+    <td><input type="text" id="formcomment" name="comment" value="" disabled="1"></input></td>
+    <td>
+      <button id="pubbutton" type="button" class="btn-xs btn-success" onclick="publish()" disabled="1">Publish</button>
+      <button id="pubbutton" type="button" class="btn-xs btn-warning" onclick="loadold()">Load old version...</button>
+</td>
     <td><span id="pubinfo"></span></td>
   </tr>
 </table>
 
-
-<div id="editor">&lt;h1&gt;Title&lt;/h1&gt;
-That was a title;
-this is some body text 
+<div class="modal fade" id="loadModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+        <h4 class="modal-title" id="myModalLabel">Load Existing File</h4>
+      </div>
+      <div class="modal-body">
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>Filename</th>
+              <th>Size</th>
+              <th>Last Modified</th>
+              <th>Open...</th>
+            </tr>
+          </thead>
+          <tbody class="filelist" id="filelist">
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+        <!-- <button type="button" class="btn btn-primary">Load</button> -->
+      </div>
+    </div>
+  </div>
 </div>
+
+<div class="modal fade" id="newModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+        <h4 class="modal-title" id="myModalLabel">Create New Page</h4>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="newfilename" value="untitled.html"></input>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createnew()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="editor">(...still loading...)</div>
 
 <div class="iframe"><iframe id="page"></iframe></div>
 
