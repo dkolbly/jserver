@@ -190,38 +190,8 @@ func (s *EditServer) HandleGit(rsp http.ResponseWriter, req *http.Request) {
 	if strings.HasPrefix(req.URL.Path, "/edit/git/status/") {
 		filename := req.URL.Path[17:]
 		status, _ := repo.StatusFile(filename)
-		/*type Response struct {
-			Status git.Status
-		}
-		r := Response{status}
-		buf, _ := json.Marshal(r)*/
+
 		rsp.Write([]byte(gitStatusToString(status)))
-	} else if strings.HasPrefix(req.URL.Path, "/edit/git/commitfile/") && req.Method == "POST" {
-		filename := req.URL.Path[14:]
-
-		idx, _ := repo.Index()
-		idx.AddByPath(filename)
-		treeId, _ := idx.WriteTree()
-
-		sig := &git.Signature{
-			Name:  "Rand Om Hacker",
-			Email: "random@hacker.com",
-			When:  time.Now(),
-		}
-
-		cb, _ := repo.Head()
-
-		tree, _ := repo.LookupTree(treeId)
-		message := "Auto commit"
-		if cb == nil {
-			repo.CreateCommit("HEAD", sig, sig, message, tree)
-		} else {
-			ct, _ := repo.LookupCommit(cb.Target())
-			repo.CreateCommit("HEAD", sig, sig, message, tree, ct)
-		}
-		repo.CheckoutIndex(idx, nil)
-
-		rsp.Write([]byte("OK"))
 	}
 	rsp.Write([]byte("\n"))
 }
@@ -530,6 +500,30 @@ func (s *EditServer) HandleHTMLPageEdit(rsp http.ResponseWriter, req *http.Reque
 	}
 }
 
+func (s *EditServer) GitCommit(fpath string, comment string) {
+	repo, _ := git.OpenRepository(s.root)
+	idx, _ := repo.Index()
+	idx.AddByPath(fpath)
+	treeId, _ := idx.WriteTree()
+
+	sig := &git.Signature{
+		Name:  "Rand Om Hacker",
+		Email: "random@hacker.com",
+		When:  time.Now(),
+	}
+
+	cb, _ := repo.Head()
+
+	tree, _ := repo.LookupTree(treeId)
+	if cb == nil {
+		repo.CreateCommit("HEAD", sig, sig, comment, tree)
+	} else {
+		ct, _ := repo.LookupCommit(cb.Target())
+		repo.CreateCommit("HEAD", sig, sig, comment, tree, ct)
+	}
+	repo.CheckoutIndex(idx, nil)
+}
+
 type Answer struct {
 	Status string `json:"status"`
 }
@@ -543,24 +537,6 @@ func (s *EditServer) PublishFile(fpath string, comment string, body []byte) erro
 	f.Write(body)
 	f.Close()
 
-	cmd := exec.Command("git", "add", fpath)
-	cmd.Dir = s.root
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
-		log.Printf("Problem running git add: %s", err)
-		return err
-	}
-
-	cmd = exec.Command("git", "commit", "-m", comment, fpath)
-	cmd.Dir = s.root
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
-		log.Printf("Problem running git commit: %s", err)
-		return err
-	}
+	s.GitCommit(fpath, comment)
 	return nil
 }
