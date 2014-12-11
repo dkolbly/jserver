@@ -58,7 +58,7 @@ function loadold() {
 function createnew() {
     console.log("new stuff")
     $('#newModal').modal('hide')
-    filename = document.getElementById("newfilename").value;
+    filename = $("#newfilename").val();
     $("#pagelink").attr("href", "/" + filename)
     $("#pagelink").text(filename)
     s.setValue("<!DOCTYPE HTML>\nNew page\n")
