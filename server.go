@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -16,10 +14,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -342,44 +338,53 @@ func (s *EditServer) HandleVersions(rsp http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	cmd := exec.Command("git", "log", "--format=tformat:%h <%ai> %s", what)
-	cmd.Dir = s.root
-	buf, err := cmd.Output()
-	if err != nil {
-		log.Printf("Failed to read git log: %s", err)
-		rsp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	// libgit2 API
+	repo, _ := git.OpenRepositoryExtended(s.root)
+	revwalk, _ := repo.Walk()
+	revwalk.PushHead()
+
+	// TODO: Is it really the index tree we want?
+	idx, _ := repo.Index()
+	last_tree_oid, _ := idx.WriteTree()
+	last_tree, _ := repo.LookupTree(last_tree_oid)
+	tree := last_tree
 
 	vlist := &VersionList{
 		Content: string(srcdata),
 		Listing: []FileVersion{},
 	}
-	re := regexp.MustCompile("([0-9a-f]+) <([0-9 :-]+)> (.*)\n$")
 
-	rdr := bufio.NewReader(bytes.NewReader(buf))
 	for {
-		line, err := rdr.ReadString('\n')
-		if err != nil {
+		oid := git.Oid{}
+		revwalk.Next(&oid)
+		//fmt.Println("Error:",err)
+		//fmt.Prntln(oid)
+		commit, _ := repo.LookupCommit(&oid)
+		//fmt.Println("Error:",err)
+		if commit == nil {
 			break
 		}
-		log.Printf("==> %q", line)
-		submatch := re.FindStringSubmatch(line)
-		if submatch != nil {
-			log.Printf("  hash %q", submatch[1])
-			log.Printf("  date %q", submatch[2])
-			log.Printf("  comment %q", submatch[3])
-			t, err := time.Parse("2006-01-02 15:04:05 -0700", submatch[2])
-			if err == nil {
-				vlist.Listing = append(vlist.Listing,
-					FileVersion{
-						Hash:     submatch[1],
-						Modified: t,
-						Comment:  submatch[3],
-					})
+
+		tree, _ = commit.Tree()
+
+		// Diff the two, figure out what files changed
+		// Particularly, whether the file we're looking at changed.
+		// TODO: Perhaps a more efficient way to do this in the API?
+		diff, _ := repo.DiffTreeToTree(last_tree, tree, nil)
+		ndeltas, _ := diff.NumDeltas()
+		for i := 0; i<ndeltas; i++ {
+			delta, _ := diff.GetDelta(i)
+			//fmt.Println(" - Changed file:", delta.OldFile.Path)
+
+			if delta.OldFile.Path == what {
+				vlist.Listing = append(vlist.Listing, FileVersion{Modified: commit.Committer().When, Comment: commit.Message()})
 			}
 		}
+		last_tree = tree
+
+		//fmt.Println("Commit message:", commit.Message())
 	}
+
 	rspbuf, _ := json.Marshal(vlist)
 	rsp.Write(rspbuf)
 }
