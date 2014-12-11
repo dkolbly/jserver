@@ -9,8 +9,9 @@ editor.setFontSize(12);
 
 var s = editor.getSession();
 s.setMode("ace/mode/html");
-var rhs = document.getElementById("page")
-//rhs.srcdoc = s.getValue();
+
+// Initialize the iframe so that it isn't all greyed out.
+document.getElementById("page").srcdoc = "<html></html>";
 
 var modified = false;
 
@@ -40,7 +41,7 @@ s.on('change', function (e) {
     if (!modified) {
         set_dirty();
     }
-    document.getElementById("page").srcdoc = pg;
+    $("#page").contents().find("html").html(pg);
 })
 
 $("#pagelink").attr("href", "/test.html")
@@ -68,7 +69,7 @@ function publish() {
     var XHR = new XMLHttpRequest();
     var FD = new FormData();
     
-    var comment = document.getElementById("formcomment").value;
+    var comment = $("#formcomment").val();
     var body = editor.getSession().getValue();
     console.log("filename = [" + filename + "]");
     console.log("comment = [" + comment + "]");
@@ -89,7 +90,7 @@ function loadpage() {
         console.log("got the page...")
         data = $.parseJSON(data);
         editor.getSession().setValue(data.content);
-        rhs.srcdoc = data.content;
+	$("#page").contents().find("html").html(data.content);
         set_clean();
     })
 }
@@ -135,7 +136,7 @@ $(document).ready(function() {
         if (!first_load) {
             first_load = true;
             edit_ready = true;
-            document.getElementById("page").srcdoc = s.getValue();
+	    $("#page").contents().find("html").html(s.getValue());
             $("#page").css("opacity", "1");
             $("#page").fadeIn(1000);
         }
