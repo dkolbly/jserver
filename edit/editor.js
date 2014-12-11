@@ -36,7 +36,6 @@ function set_dirty() {
 
 s.on('change', function (e) {
     var pg = s.getValue();
-    console.log("changed!: " + pg.substr(0,10))
     if (!modified) {
         set_dirty();
     }
@@ -58,6 +57,10 @@ function loadold() {
 function createnew() {
     console.log("new stuff")
     $('#newModal').modal('hide')
+    filename = document.getElementById("newfilename").value;
+    $("#pagelink").attr("href", "/" + filename)
+    $("#pagelink").text(filename)
+    s.setValue("<!DOCTYPE HTML>\nNew page\n")
 }
 
 
