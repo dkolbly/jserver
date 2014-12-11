@@ -377,7 +377,11 @@ func (s *EditServer) HandleVersions(rsp http.ResponseWriter, req *http.Request) 
 			//fmt.Println(" - Changed file:", delta.OldFile.Path)
 
 			if delta.OldFile.Path == what {
-				vlist.Listing = append(vlist.Listing, FileVersion{Modified: commit.Committer().When, Comment: commit.Message()})
+				vlist.Listing = append(vlist.Listing,
+					FileVersion{
+						Modified: commit.Committer().When,
+						Comment: commit.Message(),
+						Hash: oid.String()})
 			}
 		}
 		last_tree = tree
