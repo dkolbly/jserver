@@ -358,7 +358,7 @@ func (s *EditServer) HandleVersions(rsp http.ResponseWriter, req *http.Request) 
 		oid := git.Oid{}
 		revwalk.Next(&oid)
 		//fmt.Println("Error:",err)
-		//fmt.Prntln(oid)
+		//fmt.Println(oid)
 		commit, _ := repo.LookupCommit(&oid)
 		//fmt.Println("Error:",err)
 		if commit == nil {
@@ -374,9 +374,9 @@ func (s *EditServer) HandleVersions(rsp http.ResponseWriter, req *http.Request) 
 		ndeltas, _ := diff.NumDeltas()
 		for i := 0; i<ndeltas; i++ {
 			delta, _ := diff.GetDelta(i)
-			//fmt.Println(" - Changed file:", delta.OldFile.Path)
+			//fmt.Println(" - Changed file:", delta.NewFile.Path)
 
-			if delta.OldFile.Path == what {
+			if delta.NewFile.Path == what {
 				vlist.Listing = append(vlist.Listing,
 					FileVersion{
 						Modified: commit.Committer().When,
