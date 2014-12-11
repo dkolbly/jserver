@@ -1,13 +1,12 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/libgit2/git2go"
 	"io/ioutil"
 	"log"
 	"mime"
@@ -15,10 +14,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -154,6 +151,8 @@ func (s *EditServer) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
 		s.HandlePageUpdate(rsp, req)
 	} else if req.URL.Path == "/edit/html" && req.Method == "POST" {
 		s.HandleHTMLPageEdit(rsp, req)
+	} else if strings.HasPrefix(req.URL.Path, "/edit/git/") {
+		s.HandleGit(rsp,req)
 	} else if strings.HasPrefix(req.URL.Path, "/edit/v/") {
 		s.HandleVersions(rsp, req)
 	} else if req.URL.Path == "/edit/list" {
@@ -162,6 +161,35 @@ func (s *EditServer) ServeHTTP(rsp http.ResponseWriter, req *http.Request) {
 		// otherwise, serve the response from the edit tree
 		s.edit.ServeHTTP(rsp, req)
 	}
+}
+
+func gitStatusToString(status git.Status) string {
+	switch status {
+	case git.StatusCurrent:	return "Current"
+	case git.StatusIndexNew:	return "IndexNew"
+	case git.StatusIndexModified:	return "IndexModified"
+	case git.StatusIndexRenamed:	return "IndexRenamed"
+	case git.StatusIndexTypeChange:	return "IndexTypeChange"
+	case git.StatusWtNew:	return "WtNew"
+	case git.StatusWtModified:	return "WtModified"
+	case git.StatusWtDeleted:	return "WtDeleted"
+	case git.StatusWtTypeChange:	return "WtTypeChange"
+	case git.StatusWtRenamed:	return "WtRenamed"
+	case git.StatusIgnored:	return "Ignored"
+	}
+	return "Unknown"
+}
+
+// HandleGit handles all /edit/git commands
+func (s *EditServer) HandleGit(rsp http.ResponseWriter, req *http.Request) {
+	repo, _ := git.OpenRepository(s.root)
+	if strings.HasPrefix(req.URL.Path, "/edit/git/status/") {
+		filename := req.URL.Path[17:]
+		status, _ := repo.StatusFile(filename)
+
+		rsp.Write([]byte(gitStatusToString(status)))
+	}
+	rsp.Write([]byte("\n"))
 }
 
 // NeedAuthorization tells the browser we need authorization
@@ -310,44 +338,61 @@ func (s *EditServer) HandleVersions(rsp http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	cmd := exec.Command("git", "log", "--format=tformat:%h <%ai> %s", what)
-	cmd.Dir = s.root
-	buf, err := cmd.Output()
-	if err != nil {
-		log.Printf("Failed to read git log: %s", err)
-		rsp.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	// libgit2 API
+	repo, _ := git.OpenRepositoryExtended(s.root)
+	revwalk, _ := repo.Walk()
+	revwalk.PushHead()
+
+	// TODO: Is it really the index tree we want?
+	idx, _ := repo.Index()
+	last_tree_oid, _ := idx.WriteTree()
+	last_tree, _ := repo.LookupTree(last_tree_oid)
+	tree := last_tree
+	last_commit := &git.Commit{}
+	last_oid := git.Oid{}
 
 	vlist := &VersionList{
 		Content: string(srcdata),
 		Listing: []FileVersion{},
 	}
-	re := regexp.MustCompile("([0-9a-f]+) <([0-9 :-]+)> (.*)\n$")
 
-	rdr := bufio.NewReader(bytes.NewReader(buf))
 	for {
-		line, err := rdr.ReadString('\n')
-		if err != nil {
+		oid := git.Oid{}
+		revwalk.Next(&oid)
+		//fmt.Println("Error:",err)
+		fmt.Println(oid)
+		commit, _ := repo.LookupCommit(&oid)
+		//fmt.Println("Error:",err)
+		if commit == nil {
 			break
 		}
-		log.Printf("==> %q", line)
-		submatch := re.FindStringSubmatch(line)
-		if submatch != nil {
-			log.Printf("  hash %q", submatch[1])
-			log.Printf("  date %q", submatch[2])
-			log.Printf("  comment %q", submatch[3])
-			t, err := time.Parse("2006-01-02 15:04:05 -0700", submatch[2])
-			if err == nil {
+
+		tree, _ = commit.Tree()
+
+		// Diff the two, figure out what files changed
+		// Particularly, whether the file we're looking at changed.
+		// TODO: Perhaps a more efficient way to do this in the API?
+		diff, _ := repo.DiffTreeToTree(last_tree, tree, nil)
+		ndeltas, _ := diff.NumDeltas()
+		for i := 0; i<ndeltas; i++ {
+			delta, _ := diff.GetDelta(i)
+			fmt.Println(" - Changed file:", delta.NewFile.Path)
+
+			if delta.NewFile.Path == what {
 				vlist.Listing = append(vlist.Listing,
 					FileVersion{
-						Hash:     submatch[1],
-						Modified: t,
-						Comment:  submatch[3],
-					})
+						Modified: last_commit.Committer().When,
+						Comment: last_commit.Message(),
+						Hash: last_oid.String()})
 			}
 		}
+		last_tree = tree
+		last_oid = oid
+		last_commit = commit
+
+		//fmt.Println("Commit message:", commit.Message())
 	}
+
 	rspbuf, _ := json.Marshal(vlist)
 	rsp.Write(rspbuf)
 }
@@ -468,6 +513,30 @@ func (s *EditServer) HandleHTMLPageEdit(rsp http.ResponseWriter, req *http.Reque
 	}
 }
 
+func (s *EditServer) GitCommit(fpath string, comment string) {
+	repo, _ := git.OpenRepository(s.root)
+	idx, _ := repo.Index()
+	idx.AddByPath(fpath)
+	treeId, _ := idx.WriteTree()
+
+	sig := &git.Signature{
+		Name:  "Rand Om Hacker",
+		Email: "random@hacker.com",
+		When:  time.Now(),
+	}
+
+	cb, _ := repo.Head()
+
+	tree, _ := repo.LookupTree(treeId)
+	if cb == nil {
+		repo.CreateCommit("HEAD", sig, sig, comment, tree)
+	} else {
+		ct, _ := repo.LookupCommit(cb.Target())
+		repo.CreateCommit("HEAD", sig, sig, comment, tree, ct)
+	}
+	repo.CheckoutIndex(idx, nil)
+}
+
 type Answer struct {
 	Status string `json:"status"`
 }
@@ -481,24 +550,6 @@ func (s *EditServer) PublishFile(fpath string, comment string, body []byte) erro
 	f.Write(body)
 	f.Close()
 
-	cmd := exec.Command("git", "add", fpath)
-	cmd.Dir = s.root
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
-		log.Printf("Problem running git add: %s", err)
-		return err
-	}
-
-	cmd = exec.Command("git", "commit", "-m", comment, fpath)
-	cmd.Dir = s.root
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
-		log.Printf("Problem running git commit: %s", err)
-		return err
-	}
+	s.GitCommit(fpath, comment)
 	return nil
 }
